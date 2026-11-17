@@ -473,6 +473,11 @@ mark.hi{background:color-mix(in srgb,var(--gold) 45%,transparent);color:inherit;
       </div>
       <div id="talkRoom" class="room" hidden></div>
     </section>
+    <section id="v-swear" class="inner wide" hidden>
+      <div class="ghead"><div><div class="muted up" style="font-size:.85rem">Palabrotas</div><h1>Swear words 🤬</h1></div></div>
+      <p class="muted" style="margin:0 0 6px;font-weight:700">The fun, naughty side of Spanish. Tap any word to hear Lucía say it. Start with the safe ones, and save the spicy ones for friends!</p>
+      <div id="swearList"></div>
+    </section>
     <section id="v-watch" class="inner wide" hidden>
       <div class="ghead"><div><div class="muted up" style="font-size:.85rem">Watch and listen</div><h1>Videos</h1></div></div>
       <p class="muted" style="margin:0 0 6px;font-weight:700">Short, clear videos by real Spanish teachers. Tap one to watch it on YouTube (+3 XP), then come back and talk with Lucía.</p>
@@ -906,12 +911,12 @@ function slowest(ws,n){return ws.filter(function(w){var r=rec(w);return r&&r.rt;
 function due(){var n=Date.now();return ALL.filter(function(w){var r=rec(w);return r&&r.due<=n;});}
 
 /* ---------- navigation ---------- */
-var NAV=[['learn','🏠','Learn'],['talk','💬','Talk'],['games','🎮','Games'],['watch','📺','Watch'],['profe','👩‍🏫','Classes'],['review','🏋️','Review'],['settings','⚙️','Settings']];
+var NAV=[['learn','🏠','Learn'],['talk','💬','Talk'],['games','🎮','Games'],['swear','🤬','Swear words'],['watch','📺','Watch'],['profe','👩‍🏫','Classes'],['review','🏋️','Review'],['settings','⚙️','Settings']];
 var curView='learn';
 if(window.__OFFLINE)NAV=NAV.filter(function(n){return n[0]!=='profe';});
 NAV.forEach(function(n){[['#sideNav',true],['#bottomNav',false]].forEach(function(x){if(!x[1]&&(n[0]==='settings'||n[0]==='profe'))return;var b=el('button','navi');b.dataset.v=n[0];b.appendChild(el('span','ic',n[1]));b.appendChild(el('span','lbl',n[2]));b.setAttribute('aria-label',n[2]);
   b.addEventListener('click',function(){if(n[0]==='settings')openSettings();else show(n[0]);});$(x[0]).appendChild(b);});});
-function show(v){curView=v;['learn','games','profe','talk','watch','review'].forEach(function(n){$('#v-'+n).hidden=n!==v;});if(v==='talk')renderTalk();if(v==='watch')renderWatch();
+function show(v){curView=v;['learn','games','profe','talk','swear','watch','review'].forEach(function(n){$('#v-'+n).hidden=n!==v;});if(v==='talk')renderTalk();if(v==='watch')renderWatch();if(v==='swear')renderSwear();
   $$('.navi').forEach(function(b){b.setAttribute('aria-current',b.dataset.v===v?'page':'false');});
   stopSpeak();closePop();
   if(v==='learn')renderPath();if(v==='review')renderReview();if(v==='games')renderGames();
@@ -1287,10 +1292,19 @@ var WATCH=[['Start here',[['orOW9eRQfpE','The 5 Spanish vowels','Butterfly Spani
  ['Greetings and you',[['SoPiuMh6lnQ','How to greet people','SpanishPod101','3 min'],['Yo9KwQxh4T0','How to introduce yourself','Butterfly Spanish','6 min'],['Hbu8HvhYj98','A basic conversation, slowly','Hola Spanish','5 min']]],
  ['Words for every day',[['iVyUMBmfDiY','Numbers in Spanish','Butterfly Spanish','8 min'],['K6NSvBvQYBY','Colors, fast and easy','The Language Tutor','8 min'],['2RELTSJOa3E','Food words you’ll use every day','The Language Tutor','12 min'],['3Odc-nGvKzM','Family members','7 Minute Language School','4 min'],['2s4YpgDQZHg','Animals','Language Learners Español','4 min'],['YJaR7X5WyRY','Feelings: ¿Cómo estás?','Mi Camino Spanish','3 min'],['K3XN9ohrXYU','Talking about the weather','Butterfly Spanish','8 min']]],
  ['el or la? Masculine and feminine',[['v1UKf588uJM','Is a word masculine or feminine? In 3 minutes','Let’s Learn Spanish!','3 min'],['2bJy0ehC0i8','EL or LA? How to choose the right one','My Daily Spanish','8 min'],['YeTIwDcKwZ4','el, la, los, las, un, una: the little words','The Language Tutor','6 min'],['hVXSusr9nTg','lo and la: what they mean before a verb','Señor Jordan','7 min']]],
- ['Palabrotas: swear words 🤭 (grown-ups)',[['cLtX0cY7Em0','Bad words in Spanish, quick','7 Minute Language School','2 min'],['2HqLWti--MY','The complete guide to Spanish curse words','My Daily Spanish','8 min'],['VZksOmQikAY','How to curse like a Mexican','Pero Like','1 min'],['VIH4R-ZMw8c','Top Mexican slang words and phrases','Tell Me In Spanish','12 min']]],
+ ['Swear words 🤬 (palabrotas, grown-ups)',[['cLtX0cY7Em0','Bad words in Spanish, quick','7 Minute Language School','2 min'],['2HqLWti--MY','The complete guide to Spanish curse words','My Daily Spanish','8 min'],['VZksOmQikAY','How to curse like a Mexican','Pero Like','1 min'],['VIH4R-ZMw8c','Top Mexican slang words and phrases','Tell Me In Spanish','12 min']]],
  ['Songs that stick',[['G27hp1G00wI','Numbers 1 to 20 song','Señor Jordan','2 min'],['SQbspMMdJU8','Days of the week song','Jack Hartmann','2 min'],['5MJbHmgaeDM','The Spanish alphabet song','Basho & Friends','2 min'],['Jz69JxNznWA','The colors song','Jack Hartmann','4 min']]],
  ['Easy stories, all in Spanish',[['HUH85APB9PM','Fast Things','Dreaming Spanish','3 min'],['jDPGnj1DAg4','The Coffee Shop','Dreaming Spanish','8 min'],['hr8nHuFCQ2s','The easiest Spanish story','Dreaming Spanish','10 min']]],
  ['Real people, real Spanish',[['_BY4j-QCbdU','How people really introduce themselves','Easy Spanish','7 min'],['oYBl3CcVmZ4','Breakfast in slow Spanish','Easy Spanish','7 min'],['JtLypQpGruo','3 ways to order a coffee','Easy Spanish','8 min']]]];
+function renderSwear(){var box=$('#swearList');if(box.childElementCount)return;var u=UNIT.swears;if(!u)return;
+  var go=el('button','b','🎯 Practice the swear words +10 XP');go.style.cssText='width:100%;margin:4px 0 6px';go.addEventListener('click',function(){var k=0;while(k<u.lessons.length-1&&S.ldone['swears:'+k])k++;startLesson(u,k);});box.appendChild(go);
+  var all=el('button','b plain','🔊 Hear them all');all.style.cssText='width:100%;margin-bottom:8px';all.addEventListener('click',function(){var segs=[];u.words.forEach(function(w){segs.push({t:w.es,lang:'es'});});speak(segs);});box.appendChild(all);
+  var groups=[['😇 Totally safe (say them anywhere)',/safe/i],['😬 A little rude',/mild|rude|casual|friends/i],['🌶️ Spicy (grown-ups only!)',/spicy/i]],used={};
+  groups.forEach(function(g){var ws=u.words.filter(function(w){return !used[w.key]&&g[1].test(w.en);});if(g[1].source==='spicy'){ws=u.words.filter(function(w){return !used[w.key];});}if(!ws.length)return;
+    box.appendChild(el('h2','wsec',g[0]));var list=el('div','topics');
+    ws.forEach(function(w){used[w.key]=1;var b=el('button','topic');b.appendChild(el('span','e',w.pic));var d=el('div');d.style.cssText='flex:1;min-width:0';d.appendChild(el('b','',w.es));d.appendChild(el('small','',w.en.replace(/\s*\([^)]*\)\s*$/,'')));if(w.say){var sy=el('small','','say: '+w.say);sy.style.cssText='display:block;opacity:.8';d.appendChild(sy);}b.appendChild(d);b.appendChild(el('span','e','🔊'));
+      b.addEventListener('click',function(){speak([{t:w.es,lang:'es'}]);});list.appendChild(b);});box.appendChild(list);});
+  var sec=WATCH.filter(function(x){return /^Swear/.test(x[0]);})[0];if(sec){box.appendChild(el('h2','wsec','📺 Videos about swear words'));var g=el('div','vgrid');sec[1].forEach(function(v){var a=el('a','vcard');a.href='https://www.youtube.com/watch?v='+v[0];a.target='_blank';a.rel='noopener';var th=el('div','vthumb');var im=document.createElement('img');im.alt='';im.loading='lazy';im.src='https://i.ytimg.com/vi/'+v[0]+'/mqdefault.jpg';im.onerror=function(){im.remove();};th.appendChild(im);th.appendChild(el('span','vplay','▶'));th.appendChild(el('span','vlen',v[3]));a.appendChild(th);var m=el('div');m.style.cssText='padding:10px 12px';m.appendChild(el('b','',v[1]));var sm=el('small','muted',v[2]);sm.style.display='block';m.appendChild(sm);a.appendChild(m);g.appendChild(a);});box.appendChild(g);}}
 function renderWatch(){var box=$('#watchList');box.textContent='';box.className='';if(!S.watched)S.watched={};
   WATCH.forEach(function(sec){box.appendChild(el('h2','wsec',sec[0]));var g=el('div','vgrid');sec[1].forEach(function(v){var a=el('a','vcard');a.href='https://www.youtube.com/watch?v='+v[0];a.target='_blank';a.rel='noopener';
     var th=el('div','vthumb');var im=document.createElement('img');im.alt='';im.loading='lazy';im.src='https://i.ytimg.com/vi/'+v[0]+'/mqdefault.jpg';im.onerror=function(){im.remove();};th.appendChild(im);th.appendChild(el('span','vplay','▶'));th.appendChild(el('span','vlen',v[3]));if(S.watched[v[0]])th.appendChild(el('span','vdone','✔ Watched'));a.appendChild(th);
@@ -1304,7 +1318,7 @@ function welcome(){var sp=$('#splash');var nm=S.name||'Laura';$('#spEs').textCon
   $('#spGo').onclick=function(){ac();sp.classList.add('out');setTimeout(function(){sp.hidden=true;},350);confetti();
     var segs=[{t:'¡Bienvenida, '+nm+'!',lang:'es'},{t:nm==='Laura'?'Welcome, Laura! Ready to learn some Spanish?':'Welcome! Ready to learn some Spanish?',lang:'en'}];speak(segs,{lucia:true});};}
 function renderAll(){renderStats();if(curView==='learn')renderPath();if(curView==='review')renderReview();if(curView==='games')renderGames();}
-renderNotices();welcome();var h=(location.hash||'').slice(1);if(window.__OFFLINE&&h==='profe')h='learn';show(['learn','games','profe','talk','watch','review'].indexOf(h)>=0?h:'learn');renderStats();
+renderNotices();welcome();var h=(location.hash||'').slice(1);if(window.__OFFLINE&&h==='profe')h='learn';show(['learn','games','profe','talk','swear','watch','review'].indexOf(h)>=0?h:'learn');renderStats();
 window.__ch={UNITS:UNITS,ALL:ALL,S:function(){return S;},L:function(){return L;},speak:speak,bank:function(){return BANK;}};
 })();
 </script>
