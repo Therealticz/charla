@@ -753,7 +753,9 @@ var CL=window.claude&&typeof window.claude.use==='function'?window.claude:null;
 var SAMPLE=null,DICT=null,sampleState='wait';
 function use(n){return CL?CL.use(n).catch(function(){return null;}):Promise.resolve(null);}
 use('sample').then(function(s){SAMPLE=s;sampleState=s?'ok':'none';renderNotices();});
-var micOk=false;
+var micOk=false,tipShown=false;
+function micPerm(){try{if(navigator.permissions&&navigator.permissions.query)return navigator.permissions.query({name:'microphone'}).then(function(p){return p.state;},function(){return 'unknown';});}catch(e){}return Promise.resolve('unknown');}
+function rememberTip(){if(tipShown||CL)return;tipShown=true;setTimeout(function(){showMicHelp('remember');},400);}
 function webSpeech(){var Rc=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Rc||CL)return null;var fin=[],par=[],st=[],rec=null,act=false,endRes=null;
   function emit(a,x){a.forEach(function(f){try{f(x);}catch(e){}});}
   return {onFinal:function(f){fin.push(f);},onPartial:function(f){par.push(f);},onState:function(f){st.push(f);},active:function(){return act;},
@@ -766,10 +768,17 @@ function webSpeech(){var Rc=window.SpeechRecognition||window.webkitSpeechRecogni
       rec.onend=function(){act=false;emit(st,{state:'idle',reason:'stopped'});if(endRes){var r=endRes;endRes=null;r();}};rec.start();}catch(e){rej({code:'unavailable'});}}
       return new Promise(function(res,rej){
         /* Ask Android for the microphone first: this shows the real permission prompt and tells us exactly what is wrong. */
-        if(!micOk&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
-          navigator.mediaDevices.getUserMedia({audio:true}).then(function(sm){micOk=true;try{sm.getTracks().forEach(function(t){t.stop();});}catch(e){}setTimeout(function(){go(res,rej);},250);},
-            function(err){var n=err&&err.name;rej({code:n==='NotFoundError'||n==='NotReadableError'?'no_mic':'not_granted'});});
-        }else go(res,rej);});},
+        micPerm().then(function(state){
+          if(state==='granted'){micOk=true;go(res,rej);return;}
+          if(state==='denied'){rej({code:'not_granted'});return;}
+          if(!micOk&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+            navigator.mediaDevices.getUserMedia({audio:true}).then(function(sm){micOk=true;try{sm.getTracks().forEach(function(t){t.stop();});}catch(e){}
+                /* If Chrome only allowed it "this time", show how to make it permanent. */
+                setTimeout(function(){micPerm().then(function(s2){if(s2==='prompt')rememberTip();});},1500);
+                setTimeout(function(){go(res,rej);},250);},
+              function(err){var n=err&&err.name;rej({code:n==='NotFoundError'||n==='NotReadableError'?'no_mic':'not_granted'});});
+          }else{go(res,rej);if(micOk)micPerm().then(function(s2){if(s2==='prompt')rememberTip();});}
+        });});},
     stop:function(){return new Promise(function(res){if(!act||!rec)return res();endRes=res;try{rec.stop();}catch(e){res();}setTimeout(res,1500);});}};}
 use('dictation').then(function(d){DICT=d||webSpeech();d=DICT;if(d){d.onFinal(function(e){if(dictTarget&&dictTarget.final)dictTarget.final(e.text);});
   d.onPartial(function(e){if(dictTarget&&dictTarget.partial)dictTarget.partial(e.text);});
@@ -875,12 +884,17 @@ function showMicHelp(kind){var sh=$('#micHelp');if(!sh){sh=el('div','sheet');sh.
     p('The phone\u2019s speech service didn\u2019t answer. This usually means the Google app is off or out of date, or there\u2019s no internet.');
     steps(['Check you\u2019re on Wi-Fi or data.','Open the Play Store and update \u201cGoogle\u201d and \u201cSpeech Recognition & Synthesis\u201d.','Phone Settings \u2192 Apps \u2192 Google \u2192 make sure it\u2019s turned on and Microphone is allowed.','Come back and tap the mic again.']);
     btn('Try again','b',function(){sh.hidden=true;});
+  }else if(kind==='remember'){
+    c.querySelector('h2').textContent='\uD83C\uDF99\uFE0F Make Chrome remember';
+    p('Chrome is only allowing the microphone one time, so it keeps asking. Set it to Allow once and it will stop asking:');
+    steps(['Tap the icon to the left of the web address at the top (\u24D8, a lock, or sliders).','Tap Permissions (or Site settings).','Tap Microphone \u2192 Allow.','Next time Chrome asks, pick \u201cAllow while visiting the site\u201d, not \u201cAllow this time\u201d.']);
+    btn('Done','b',function(){sh.hidden=true;});
   }else if(kind==='nomic'){
     p('Charla can\u2019t find a working microphone. Another app (a call, a voice recorder) might be using it.');
     steps(['Close other apps that use the microphone.','Take off Bluetooth headphones, or make sure they\u2019re connected.','Tap the mic again.']);
     btn('OK','b',function(){sh.hidden=true;});
   }
-  btn('Skip \u2014 I\u2019ll tap the answers','b plain',function(){sh.hidden=true;});
+  if(kind!=='remember')btn('Skip \u2014 I\u2019ll tap the answers','b plain',function(){sh.hidden=true;});
   sh.hidden=false;}
 
 /* ---------- matching ---------- */
