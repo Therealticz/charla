@@ -748,14 +748,23 @@ var CL=window.claude&&typeof window.claude.use==='function'?window.claude:null;
 var SAMPLE=null,DICT=null,sampleState='wait';
 function use(n){return CL?CL.use(n).catch(function(){return null;}):Promise.resolve(null);}
 use('sample').then(function(s){SAMPLE=s;sampleState=s?'ok':'none';renderNotices();});
+var micOk=false;
 function webSpeech(){var Rc=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Rc||CL)return null;var fin=[],par=[],st=[],rec=null,act=false,endRes=null;
   function emit(a,x){a.forEach(function(f){try{f(x);}catch(e){}});}
   return {onFinal:function(f){fin.push(f);},onPartial:function(f){par.push(f);},onState:function(f){st.push(f);},active:function(){return act;},
-    start:function(o){return new Promise(function(res,rej){try{rec=new Rc();rec.lang=(o&&o.language==='en')?'en-US':'es-MX';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;var started=false;
+    start:function(o){var lang=(o&&o.language==='en')?'en-US':'es-MX';
+      function go(res,rej){try{rec=new Rc();rec.lang=lang;rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;var started=false,heard=false;
       rec.onstart=function(){started=true;act=true;emit(st,{state:'listening'});res();};
-      rec.onresult=function(e){for(var i=e.resultIndex;i<e.results.length;i++){var t=e.results[i][0].transcript;emit(e.results[i].isFinal?fin:par,{text:t});}};
-      rec.onerror=function(e){if(!started)rej({code:e.error==='not-allowed'||e.error==='service-not-allowed'?'not_granted':'unavailable'});};
-      rec.onend=function(){act=false;emit(st,{state:'idle',reason:'stopped'});if(endRes){var r=endRes;endRes=null;r();}};rec.start();}catch(e){rej({code:'unavailable'});}});},
+      rec.onresult=function(e){heard=true;for(var i=e.resultIndex;i<e.results.length;i++){var t=e.results[i][0].transcript;emit(e.results[i].isFinal?fin:par,{text:t});}};
+      rec.onerror=function(e){var c=e.error==='not-allowed'?'not_granted':e.error==='service-not-allowed'?'service':e.error==='audio-capture'?'no_mic':e.error==='network'?'network':e.error==='no-speech'?'no_speech':e.error==='aborted'?'stopped':'unavailable';
+        if(!started)rej({code:c});else if(c!=='stopped'&&c!=='no_speech')micTrouble(c);else if(c==='no_speech')toast('I didn\u2019t hear anything. Tap the mic and speak right away.');};
+      rec.onend=function(){act=false;emit(st,{state:'idle',reason:'stopped'});if(endRes){var r=endRes;endRes=null;r();}};rec.start();}catch(e){rej({code:'unavailable'});}}
+      return new Promise(function(res,rej){
+        /* Ask Android for the microphone first: this shows the real permission prompt and tells us exactly what is wrong. */
+        if(!micOk&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+          navigator.mediaDevices.getUserMedia({audio:true}).then(function(sm){micOk=true;try{sm.getTracks().forEach(function(t){t.stop();});}catch(e){}setTimeout(function(){go(res,rej);},250);},
+            function(err){var n=err&&err.name;rej({code:n==='NotFoundError'||n==='NotReadableError'?'no_mic':'not_granted'});});
+        }else go(res,rej);});},
     stop:function(){return new Promise(function(res){if(!act||!rec)return res();endRes=res;try{rec.stop();}catch(e){res();}setTimeout(res,1500);});}};}
 use('dictation').then(function(d){DICT=d||webSpeech();d=DICT;if(d){d.onFinal(function(e){if(dictTarget&&dictTarget.final)dictTarget.final(e.text);});
   d.onPartial(function(e){if(dictTarget&&dictTarget.partial)dictTarget.partial(e.text);});
@@ -823,10 +832,51 @@ function blip(kind){if(!S.sfx)return;var c=ac();if(!c)return;var t=c.currentTime
 /* ---------- dictation ---------- */
 var dictTarget=null,micBtn=null;
 function micState(st){$$('.mic,.micbig').forEach(function(b){b.classList.remove('on');});if(micBtn&&st!=='idle')micBtn.classList.add('on');if(st==='idle')micBtn=null;}
-function syncMics(){$$('[data-needs-mic]').forEach(function(b){b.hidden=!DICT;});}
-function listen(btn,target,lang){if(!DICT)return false;if(DICT.active()&&micBtn===btn){DICT.stop();return true;}stopSpeak();dictTarget=target;micBtn=btn;
+function syncMics(){$$('[data-needs-mic]').forEach(function(b){b.hidden=!DICT&&!(!CL&&IS_ANDROID);});}
+function listen(btn,target,lang){if(!DICT){if(!CL&&IS_ANDROID){micTrouble('unavailable');return true;}return false;}if(DICT.active()&&micBtn===btn){DICT.stop();return true;}stopSpeak();dictTarget=target;micBtn=btn;
   DICT.start({language:lang||'es'}).catch(function(e){micBtn=null;micState('idle');var c=e&&e.code;
-    if(c==='not_granted')toast(location.protocol==='file:'?'Phones block the microphone when Charla is opened as a file. Open Charla from its web link in Chrome to talk. For now, tap an answer.':'Allow the microphone for this page (tap the lock icon by the address), or tap an answer instead.');else if(c==='unavailable')toast('Talking isn’t available here. You can tap an answer instead.');else if(c!=='stopped'&&c!=='dismissed')toast('The microphone didn’t start. Try again.');});return true;}
+    if(c!=='stopped'&&c!=='dismissed')micTrouble(c);});return true;}
+
+/* ---------- microphone help ---------- */
+var UA=navigator.userAgent||'';
+var IS_ANDROID=/Android/i.test(UA),IS_SAMSUNG=/SamsungBrowser/i.test(UA),IS_INAPP=/; wv\)|FBAN|FBAV|Instagram|Line\/|Snapchat|KAKAOTALK|GSA\/|WhatsApp|Messenger/i.test(UA);
+var IS_CHROME=/Chrome\//.test(UA)&&!IS_SAMSUNG&&!IS_INAPP&&!/EdgA|OPR|Firefox|DuckDuckGo|Brave/i.test(UA);
+function micFix(){return !CL&&IS_ANDROID&&!DICT;}
+function chromeLink(){var u=location.href.replace(/^https?:\/\//,'');return 'intent://'+u+'#Intent;scheme=https;package=com.android.chrome;end';}
+function micTrouble(code){
+  if(location.protocol==='file:'){showMicHelp('file');return;}
+  if(code==='no_mic'){showMicHelp('nomic');return;}
+  if(IS_ANDROID&&!IS_CHROME){showMicHelp('browser');return;}
+  if(code==='not_granted'){showMicHelp('denied');return;}
+  if(code==='service'||code==='network'){showMicHelp('service');return;}
+  toast('The microphone didn\u2019t start. Try again, or tap an answer.');}
+function showMicHelp(kind){var sh=$('#micHelp');if(!sh){sh=el('div','sheet');sh.id='micHelp';var c=el('div','card');c.setAttribute('role','dialog');c.setAttribute('aria-modal','true');sh.appendChild(c);document.body.appendChild(sh);
+    sh.addEventListener('click',function(e){if(e.target===sh||e.target.closest('[data-close]'))sh.hidden=true;});}
+  var c=sh.firstChild;c.innerHTML='';
+  var top=el('div');top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:10px';top.appendChild(el('h2','','\uD83C\uDF99\uFE0F Let\u2019s turn on the microphone'));var x=el('button','x','\u2715');x.setAttribute('data-close','');x.setAttribute('aria-label','Close');top.appendChild(x);c.appendChild(top);
+  function p(t){var e=el('div','',t);e.style.cssText='font-weight:700;line-height:1.45';c.appendChild(e);return e;}
+  function steps(a){var ol=el('ol');ol.style.cssText='margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;font-weight:700;line-height:1.4';a.forEach(function(t){ol.appendChild(el('li','',t));});c.appendChild(ol);}
+  function btn(t,cls,fn){var b=el('button',cls,t);b.style.width='100%';b.addEventListener('click',fn);c.appendChild(b);return b;}
+  if(kind==='browser'||kind==='file'){
+    p(IS_SAMSUNG?'This page is open in Samsung Internet, which can\u2019t listen to Spanish. Talking works in Google Chrome.':IS_INAPP?'This page opened inside another app, which blocks the microphone. Talking works in Google Chrome.':'Talking works best in Google Chrome.');
+    btn('Open Charla in Chrome','b',function(){location.href=chromeLink();});
+    steps(['Tap the button above. Chrome opens Charla.','When Chrome asks to use the microphone, tap Allow.','In Chrome, tap \u22EE (top right) \u2192 Add to Home screen, so the Charla icon always opens in Chrome.']);
+    p('No Chrome? Install \u201cGoogle Chrome\u201d from the Play Store, then open this link in it: '+location.origin+location.pathname).style.fontSize='14px';
+  }else if(kind==='denied'){
+    p('Your phone said no to the microphone for Charla. Here\u2019s how to switch it back on:');
+    steps(['In Chrome, tap the icon left of the web address (\u24D8 or the sliders/lock).','Tap Permissions \u2192 Microphone \u2192 Allow. (Or tap Reset permissions.)','If it still won\u2019t work: open your phone\u2019s Settings \u2192 Apps \u2192 Chrome \u2192 Permissions \u2192 Microphone \u2192 Allow.','Come back here and tap Try again.']);
+    btn('Try again','b',function(){sh.hidden=true;location.reload();});
+  }else if(kind==='service'){
+    p('The phone\u2019s speech service didn\u2019t answer. This usually means the Google app is off or out of date, or there\u2019s no internet.');
+    steps(['Check you\u2019re on Wi-Fi or data.','Open the Play Store and update \u201cGoogle\u201d and \u201cSpeech Recognition & Synthesis\u201d.','Phone Settings \u2192 Apps \u2192 Google \u2192 make sure it\u2019s turned on and Microphone is allowed.','Come back and tap the mic again.']);
+    btn('Try again','b',function(){sh.hidden=true;});
+  }else if(kind==='nomic'){
+    p('Charla can\u2019t find a working microphone. Another app (a call, a voice recorder) might be using it.');
+    steps(['Close other apps that use the microphone.','Take off Bluetooth headphones, or make sure they\u2019re connected.','Tap the mic again.']);
+    btn('OK','b',function(){sh.hidden=true;});
+  }
+  btn('Skip \u2014 I\u2019ll tap the answers','b plain',function(){sh.hidden=true;});
+  sh.hidden=false;}
 
 /* ---------- matching ---------- */
 function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[¿?¡!.,;:…"“”'’()]/g,' ').replace(/\s+/g,' ').trim();}
@@ -960,7 +1010,7 @@ var tipShown=false;
 function intro(w,box){var nt=el('div','newtag','✨ New word');if(humanKey(w.es)){var rv=el('span','realv','🎙️ Real native speaker');nt.appendChild(rv);}box.appendChild(nt);var h=el('div','hero');h.appendChild(picEl(w.pic,'bigpic'));h.appendChild(wordEl(w));h.appendChild(el('div','gloss',w.en));if(w.say)h.appendChild(el('div','respell','say it: '+w.say));box.appendChild(h);
   var r=speechRow(w,false,'Hear it');r.style.justifyContent='center';$('.bubble',r).style.marginBottom='0';box.appendChild(r);
   if(w.art&&!tipShown){tipShown=true;var t=el('div','tip');t.appendChild(el('span','','💡'));var tx=el('div');tx.appendChild(el('b','','Every noun is masculine or feminine. '));tx.appendChild(document.createTextNode('Blue el / los = masculine. Pink la / las = feminine. Learn the little word with the noun.'));t.appendChild(tx);box.appendChild(t);}
-  if(DICT){var m=el('button','micbig');m.appendChild(el('span','','🎤'));m.appendChild(el('span','','Say it out loud'));var wv=el('span','wave');for(var i=0;i<4;i++)wv.appendChild(el('i'));m.appendChild(wv);var hd=el('div','heard');box.appendChild(m);box.appendChild(hd);
+  if(DICT||micFix()){var m=el('button','micbig');m.appendChild(el('span','','🎤'));m.appendChild(el('span','','Say it out loud'));var wv=el('span','wave');for(var i=0;i<4;i++)wv.appendChild(el('i'));m.appendChild(wv);var hd=el('div','heard');box.appendChild(m);box.appendChild(hd);
     m.addEventListener('click',function(){listen(m,{partial:function(t){hd.textContent=t?'…'+t:'';},final:function(t){var ok=sim(t,w.es)>=.72;hd.textContent='You said “'+t.trim()+'”'+(ok?'  ✓ ¡Perfecto!':'  · listen and try again');hd.style.color=ok?'var(--green-ink)':'var(--red-ink)';if(ok)blip('ok');DICT.stop();}});});}
   var fi=foot();fi.appendChild(el('span',''));var c=el('button','b','Continue');c.addEventListener('click',function(){if(!learned(w)){grade(w,true,true);save();}next();});fi.appendChild(c);c.focus();
   setTimeout(function(){if(L&&L.steps[L.i]&&L.steps[L.i].w===w)sayEs(w.es);},250);}
@@ -1216,8 +1266,8 @@ function cvStep(){var me=CV;if(!me)return;var st=me.c.steps[me.i];me.tries=0;me.
   var opts=el('div','cv-opts');st.r.forEach(function(r,idx){var b=el('div','cv-opt');b.setAttribute('role','button');b.tabIndex=0;var d=el('div');d.style.minWidth='0';d.appendChild(el('b','',r[0]));d.appendChild(el('span','',r[1]));b.appendChild(d);
     var h=el('button','hear','🔊');h.setAttribute('aria-label','Hear how to say it');h.addEventListener('click',function(e){e.stopPropagation();speak([{t:r[0],lang:'es'}],{lucia:true});});b.appendChild(h);
     b.addEventListener('click',function(){cvAnswer(idx,r[0]);});opts.appendChild(b);});
-  if(DICT){var tb=el('div','talkbar');var mic=el('button','talkbtn','🎤');mic.type='button';mic.setAttribute('aria-label','Say your answer');var cap=el('div','talkcap','Tap the mic and answer out loud');tb.appendChild(mic);tb.appendChild(cap);me.stage.appendChild(tb);
-    var heard='';mic.addEventListener('click',function(){if(DICT.active()&&micBtn===mic){DICT.stop();return;}heard='';
+  if(DICT||micFix()){var tb=el('div','talkbar');var mic=el('button','talkbtn','🎤');mic.type='button';mic.setAttribute('aria-label','Say your answer');var cap=el('div','talkcap','Tap the mic and answer out loud');tb.appendChild(mic);tb.appendChild(cap);me.stage.appendChild(tb);
+    var heard='';mic.addEventListener('click',function(){if(DICT&&DICT.active()&&micBtn===mic){DICT.stop();return;}heard='';
       listen(mic,{partial:function(t){if(t)cap.textContent='“'+t+'”';},final:function(t){heard=(heard+' '+t).trim();cap.textContent='“'+heard+'”';DICT.stop();},end:function(){if(heard&&CV===me)cvHeard(heard);else cap.textContent='Tap the mic and answer out loud';}},'es');});
     me.stage.appendChild(el('div','cv-help','…or tap an answer:'));}
   else me.stage.appendChild(el('div','cv-help','Tap your answer. Press 🔊 to hear how it sounds, then say it out loud too!'));
